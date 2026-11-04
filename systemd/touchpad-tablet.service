@@ -1,0 +1,14 @@
+[Unit]
+Description=Touchpad Drawing Pad (Absolute Digitizer Tablet Daemon)
+Documentation=https://github.com/timsurrealedu/touchpad-drawing-pad
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -m touchpad_tablet run --mode mouse
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

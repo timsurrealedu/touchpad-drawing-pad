@@ -1,0 +1,2 @@
+# Allow users in the 'input' group to access uinput without root privileges
+KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess", GROUP="input", MODE="0660"
