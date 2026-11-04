@@ -20,16 +20,17 @@ DEFAULT_CONFIG_PATH = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".con
 @dataclass
 class TabletConfig:
     device: Optional[str] = None
-    start_mode: str = "tablet"  # "tablet" or "mouse"
+    start_mode: str = "mouse"  # "tablet" or "mouse"
     aspect_ratio: str = "fit"  # "fit", "stretch"
     screen_width: Optional[int] = None
     screen_height: Optional[int] = None
-    smoothing: float = 0.35  # 0.0 to 1.0 (0.0 = raw, 1.0 = heavy smoothing)
+    smoothing: float = 0.5  # 0.0 to 1.0 (0.0 = raw, 0.5 = balanced smooth, 0.9 = heavy calligraphy)
+    deadzone: float = 2.5  # Hysteresis in sensor units (~0.1mm) to eliminate stationary jitter
     use_one_euro: bool = True
     pressure_min: int = 800
     pressure_max: int = 4096
     pressure_curve: str = "velocity"  # "velocity", "constant"
-    click_action: str = "stylus"  # "stylus" (BTN_STYLUS), "touch", "none"
+    click_action: str = "none"  # "none", "touch", "stylus"
     notifications: bool = True
 
     @classmethod
@@ -44,16 +45,17 @@ class TabletConfig:
             tablet_data = data.get("tablet", {})
             return cls(
                 device=tablet_data.get("device"),
-                start_mode=tablet_data.get("start_mode", "tablet"),
+                start_mode=tablet_data.get("start_mode", "mouse"),
                 aspect_ratio=tablet_data.get("aspect_ratio", "fit"),
                 screen_width=tablet_data.get("screen_width"),
                 screen_height=tablet_data.get("screen_height"),
-                smoothing=float(tablet_data.get("smoothing", 0.35)),
+                smoothing=float(tablet_data.get("smoothing", 0.5)),
+                deadzone=float(tablet_data.get("deadzone", 2.5)),
                 use_one_euro=bool(tablet_data.get("use_one_euro", True)),
                 pressure_min=int(tablet_data.get("pressure_min", 800)),
                 pressure_max=int(tablet_data.get("pressure_max", 4096)),
                 pressure_curve=tablet_data.get("pressure_curve", "velocity"),
-                click_action=tablet_data.get("click_action", "stylus"),
+                click_action=tablet_data.get("click_action", "none"),
                 notifications=bool(tablet_data.get("notifications", True)),
             )
         except Exception:
@@ -81,8 +83,11 @@ aspect_ratio = "{self.aspect_ratio}"
 # screen_width = {sw_str}
 # screen_height = {sh_str}
 
-# Coordinate smoothing factor (0.0 = raw hardware events, 0.35 = balanced, 0.8 = heavy smoothing)
+# Coordinate smoothing factor (0.0 = raw, 0.5 = balanced smooth, 0.8 = heavy stabilization)
 smoothing = {self.smoothing}
+
+# Stationary noise deadzone in sensor units (2.5 units ≈ 0.1mm, prevents cursor jitter when holding still)
+deadzone = {self.deadzone}
 
 # Use One-Euro adaptive filter (recommended, eliminates jitter at low speeds while keeping zero latency at high speeds)
 use_one_euro = {"true" if self.use_one_euro else "false"}
@@ -92,7 +97,7 @@ pressure_min = {self.pressure_min}
 pressure_max = {self.pressure_max}
 pressure_curve = "{self.pressure_curve}" # "velocity" or "constant"
 
-# Physical clickpad press action ("stylus" = trigger BTN_STYLUS for palette/right-click, "touch", "none")
+# Physical clickpad press action ("none" = ignore click, "touch" = full pressure stroke, "stylus" = trigger BTN_STYLUS)
 click_action = "{self.click_action}"
 
 # Desktop notifications on mode toggling

@@ -167,6 +167,10 @@ class UInputTablet:
 
     def set_stylus_button(self, pressed: bool) -> None:
         """Toggles the stylus barrel button (e.g. for palette popup or eraser)."""
+        # Guard: Only emit stylus buttons when pen is actively in proximity/touching
+        if not self._pen_in_proximity:
+            return
+
         if self._stylus_active != pressed:
             self._emit(EV_KEY, BTN_STYLUS, 1 if pressed else 0)
             self._sync()

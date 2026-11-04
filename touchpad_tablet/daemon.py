@@ -65,6 +65,7 @@ class TabletDaemon:
         self.smoother = CoordinateSmoother(
             smoothing=self.config.smoothing,
             use_one_euro=self.config.use_one_euro,
+            deadzone=self.config.deadzone,
         )
         self.pressure_calc = PseudoPressureCalculator(
             min_pressure=self.config.pressure_min,
@@ -86,6 +87,7 @@ class TabletDaemon:
         self.raw_x = 0
         self.raw_y = 0
         self.touch_down = False
+        self._was_touching = False
         self.click_pressed = False
 
     def _compute_geometry(self) -> None:
@@ -146,6 +148,12 @@ class TabletDaemon:
             return
         logger.info("Enabling Tablet Mode (grabbing device)...")
         try:
+            self.smoother.reset()
+            self.pressure_calc.reset()
+            self._was_touching = False
+            self.touch_down = False
+            self.slot_active.clear()
+
             grab_device(self.touchpad_fd, grab=True)
             self.is_tablet_mode = True
             self.notifier.notify_mode_change(True)
@@ -158,11 +166,14 @@ class TabletDaemon:
             return
         logger.info("Disabling Tablet Mode (releasing grab)...")
         try:
-            if self.touch_down and self.uinput_tablet:
+            if self._was_touching and self.uinput_tablet:
                 self.uinput_tablet.pen_up()
-                self.touch_down = False
+                self._was_touching = False
+            self.touch_down = False
+            self.slot_active.clear()
             self.smoother.reset()
             self.pressure_calc.reset()
+
             grab_device(self.touchpad_fd, grab=False)
             self.is_tablet_mode = False
             self.notifier.notify_mode_change(False)
@@ -190,6 +201,7 @@ class TabletDaemon:
                 "screen_height": self.screen_height,
                 "aspect_ratio": self.config.aspect_ratio,
                 "smoothing": self.config.smoothing,
+                "deadzone": self.config.deadzone,
             })
         elif cmd == "TOGGLE":
             mode = "tablet" if self.toggle_mode() else "mouse"
@@ -206,23 +218,28 @@ class TabletDaemon:
         else:
             return f"ERROR: Unknown command '{cmd}'"
 
-    def _process_event_frame(self) -> None:
+    def _process_event_frame(self, event_time: Optional[float] = None) -> None:
         """Invoked upon SYN_REPORT to flush buffered state to virtual tablet."""
         if not self.is_tablet_mode or not self.uinput_tablet:
             return
 
         if self.touch_down:
             mapped_x, mapped_y = self._map_coordinates(self.raw_x, self.raw_y)
-            filtered_x, filtered_y = self.smoother.filter(mapped_x, mapped_y)
-            pressure = self.pressure_calc.compute(filtered_x, filtered_y)
+            filtered_x, filtered_y = self.smoother.filter(mapped_x, mapped_y, timestamp=event_time)
+            pressure = self.pressure_calc.compute(filtered_x, filtered_y, timestamp=event_time)
 
-            # If clickpad is pressed and click_action is touch, boost pressure
             if self.click_pressed and self.config.click_action == "touch":
                 pressure = self.config.pressure_max
 
-            self.uinput_tablet.pen_move(int(filtered_x), int(filtered_y), pressure)
+            if not self._was_touching:
+                self.uinput_tablet.pen_down(int(filtered_x), int(filtered_y), pressure)
+                self._was_touching = True
+            else:
+                self.uinput_tablet.pen_move(int(filtered_x), int(filtered_y), pressure)
         else:
-            self.uinput_tablet.pen_up()
+            if self._was_touching:
+                self.uinput_tablet.pen_up()
+                self._was_touching = False
             self.smoother.reset()
             self.pressure_calc.reset()
 
@@ -282,12 +299,19 @@ class TabletDaemon:
                             logger.error(f"Error reading from touchpad: {e}")
                             break
 
+                        # CRITICAL BUG FIX 1:
+                        # If in Mouse Mode, DO NOT PROCESS ANY TOUCHPAD EVENTS.
+                        # Simply drain the buffer and continue so libinput handles native mouse clicks.
+                        if not self.is_tablet_mode:
+                            continue
+
                         num_events = bytes_read // INPUT_EVENT_SIZE
                         for i in range(num_events):
                             ev = input_event.from_buffer_copy(read_buf[i * INPUT_EVENT_SIZE : (i + 1) * INPUT_EVENT_SIZE])
+                            event_time = ev.time.tv_sec + ev.time.tv_usec * 1e-6
 
                             if ev.type == EV_SYN and ev.code == SYN_REPORT:
-                                self._process_event_frame()
+                                self._process_event_frame(event_time)
 
                             elif ev.type == EV_ABS:
                                 if ev.code == ABS_MT_SLOT:
@@ -314,12 +338,11 @@ class TabletDaemon:
 
                             elif ev.type == EV_KEY:
                                 if ev.code in (BTN_TOUCH, BTN_TOOL_FINGER):
-                                    # Fallback single touch handling if tracking id is omitted
                                     if not self.touchpad_info.has_multitouch:
                                         self.touch_down = (ev.value == 1)
                                 elif ev.code == BTN_LEFT:
                                     self.click_pressed = (ev.value == 1)
-                                    if self.config.click_action == "stylus" and self.uinput_tablet:
+                                    if self.config.click_action == "stylus" and self.uinput_tablet and self._was_touching:
                                         self.uinput_tablet.set_stylus_button(self.click_pressed)
 
         finally:

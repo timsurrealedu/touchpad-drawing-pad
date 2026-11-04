@@ -34,6 +34,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         config.aspect_ratio = args.aspect_ratio
     if args.smoothing is not None:
         config.smoothing = args.smoothing
+    if getattr(args, "deadzone", None) is not None:
+        config.deadzone = args.deadzone
     if args.mode:
         config.start_mode = args.mode
 
@@ -64,6 +66,8 @@ def cmd_start(args: argparse.Namespace) -> int:
         cmd.extend(["--aspect-ratio", args.aspect_ratio])
     if args.smoothing is not None:
         cmd.extend(["--smoothing", str(args.smoothing)])
+    if getattr(args, "deadzone", None) is not None:
+        cmd.extend(["--deadzone", str(args.deadzone)])
     if args.mode:
         cmd.extend(["--mode", args.mode])
 
@@ -244,6 +248,7 @@ def main() -> None:
     p_run.add_argument("--device", help="Path to /dev/input/event* device node")
     p_run.add_argument("--aspect-ratio", choices=["fit", "stretch"], help="Aspect ratio mode")
     p_run.add_argument("--smoothing", type=float, help="Smoothing factor (0.0 to 1.0)")
+    p_run.add_argument("--deadzone", type=float, help="Jitter deadzone threshold in sensor units (default 2.5)")
     p_run.add_argument("--mode", choices=["tablet", "mouse"], help="Initial mode on startup")
     p_run.add_argument("--debug", action="store_true", help="Enable verbose debug logging")
 
@@ -252,6 +257,7 @@ def main() -> None:
     p_start.add_argument("--device", help="Path to /dev/input/event* device node")
     p_start.add_argument("--aspect-ratio", choices=["fit", "stretch"], help="Aspect ratio mode")
     p_start.add_argument("--smoothing", type=float, help="Smoothing factor (0.0 to 1.0)")
+    p_start.add_argument("--deadzone", type=float, help="Jitter deadzone threshold in sensor units (default 2.5)")
     p_start.add_argument("--mode", choices=["tablet", "mouse"], help="Initial mode on startup")
 
     # stop / toggle / enable / disable / status

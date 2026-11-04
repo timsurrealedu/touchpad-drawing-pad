@@ -32,7 +32,7 @@ class OneEuroFilter:
     Reference: Casiez, Roussel, Vogel (CHI 2012)
     """
 
-    def __init__(self, min_cutoff: float = 1.0, beta: float = 0.007, d_cutoff: float = 1.0):
+    def __init__(self, min_cutoff: float = 0.2, beta: float = 0.015, d_cutoff: float = 1.0):
         self.min_cutoff = min_cutoff
         self.beta = beta
         self.d_cutoff = d_cutoff
@@ -53,7 +53,11 @@ class OneEuroFilter:
 
         dt = now - self.last_time
         self.last_time = now
-        rate = 1.0 / dt if dt > 0.0001 else 120.0
+        # Clamp rate to realistic sensor bounds (between 20Hz and 500Hz)
+        if dt > 0.0001:
+            rate = min(500.0, max(20.0, 1.0 / dt))
+        else:
+            rate = 120.0
 
         # Estimate derivative (speed)
         prev_x = self.x_filt.s if self.x_filt.s is not None else x
@@ -71,15 +75,27 @@ class OneEuroFilter:
 
 
 class CoordinateSmoother:
-    """Manages 2D coordinate smoothing with One-Euro or simple EMA."""
+    """
+    Manages 2D coordinate smoothing with One-Euro filter and hysteresis deadzone.
+    Provides steady, non-jittery drawing lines at low speeds while remaining responsive.
+    """
 
-    def __init__(self, smoothing: float = 0.35, use_one_euro: bool = True):
+    def __init__(
+        self,
+        smoothing: float = 0.5,
+        use_one_euro: bool = True,
+        deadzone: float = 2.5,
+    ):
         self.smoothing = max(0.0, min(1.0, smoothing))
         self.use_one_euro = use_one_euro
+        self.deadzone = max(0.0, deadzone)
+
         if self.use_one_euro:
-            # Scale parameters based on smoothing factor
-            min_cutoff = max(0.2, 2.0 * (1.0 - self.smoothing))
-            beta = 0.005 + 0.02 * (1.0 - self.smoothing)
+            # Calibrated for touch digitizer:
+            # Lower min_cutoff = heavy stabilization when drawing slowly or holding still
+            # Higher beta = quick cutoff expansion when flicking or drawing swift strokes
+            min_cutoff = 0.04 + 1.20 * math.pow(1.0 - self.smoothing, 2.2)
+            beta = 0.005 + 0.035 * (1.0 - self.smoothing)
             self.fx = OneEuroFilter(min_cutoff=min_cutoff, beta=beta)
             self.fy = OneEuroFilter(min_cutoff=min_cutoff, beta=beta)
         else:
@@ -87,14 +103,35 @@ class CoordinateSmoother:
             self.fx = LowPassFilter(alpha)
             self.fy = LowPassFilter(alpha)
 
+        self.last_out_x: Optional[float] = None
+        self.last_out_y: Optional[float] = None
+
     def filter(self, x: float, y: float, timestamp: Optional[float] = None) -> Tuple[float, float]:
         if self.smoothing <= 0.001:
             return x, y
-        return self.fx.filter(x, timestamp), self.fy.filter(y, timestamp)
+
+        filt_x = self.fx.filter(x, timestamp)
+        filt_y = self.fy.filter(y, timestamp)
+
+        if self.last_out_x is None or self.last_out_y is None:
+            self.last_out_x = filt_x
+            self.last_out_y = filt_y
+            return filt_x, filt_y
+
+        # Deadzone hysteresis: suppress tiny capacitive centroid fluctuations while stationary
+        dist = math.hypot(filt_x - self.last_out_x, filt_y - self.last_out_y)
+        if dist < self.deadzone:
+            return self.last_out_x, self.last_out_y
+
+        self.last_out_x = filt_x
+        self.last_out_y = filt_y
+        return filt_x, filt_y
 
     def reset(self) -> None:
         self.fx.reset()
         self.fy.reset()
+        self.last_out_x = None
+        self.last_out_y = None
 
 
 class PseudoPressureCalculator:
@@ -128,7 +165,6 @@ class PseudoPressureCalculator:
             self.last_x = x
             self.last_y = y
             self.last_time = now
-            # Initial touch-down starts moderately firm
             initial = int(self.min_p + (self.max_p - self.min_p) * 0.6)
             self.pressure_filter.filter(initial)
             return initial
@@ -148,7 +184,6 @@ class PseudoPressureCalculator:
             speed = dist / dt  # units per second
 
         # Map speed: 0 units/sec -> max pressure; 3000+ units/sec -> min pressure
-        # Normal hand motion spans roughly 100 to 2500 units/second
         speed_norm = max(0.0, min(1.0, speed / 2500.0))
 
         # Inverted exponential curve: fast movement = lower pressure
