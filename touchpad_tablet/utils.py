@@ -181,8 +181,8 @@ INPUT_EVENT_SIZE = ctypes.sizeof(input_event)
 
 def grab_device(fd: int, grab: bool = True) -> None:
     """Acquires or releases exclusive grab on an evdev file descriptor."""
-    val = ctypes.c_int(1 if grab else 0)
-    fcntl.ioctl(fd, EVIOCGRAB, val)
+    # Pass integer directly so kernel receives (void *) 1 or (void *) 0
+    fcntl.ioctl(fd, EVIOCGRAB, 1 if grab else 0)
 
 
 def test_bit(bitfield: bytes, bit: int) -> bool:
