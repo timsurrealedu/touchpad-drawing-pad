@@ -101,8 +101,10 @@ touchpad-tablet stop
 
 Bind a hotkey in your window manager to quickly toggle between drawing tablet and normal mouse!
 
-### Hyprland (`~/.config/hypr/hyprland.conf`)
+### Hyprland (`~/.config/hypr/hyprland.conf` or `~/.config/hypr/dms/binds-user.lua`)
 ```ini
+bind = $mainMod, B, exec, touchpad-tablet toggle
+# Or function key:
 bind = $mainMod, F10, exec, touchpad-tablet toggle
 ```
 
@@ -134,13 +136,16 @@ Example `config.toml`:
 # device = "/dev/input/event9"
 
 # Startup mode ("tablet" or "mouse")
-start_mode = "tablet"
+start_mode = "mouse"
 
 # Aspect ratio mode ("fit" = maintain 16:10 / 16:9 ratio, "stretch" = 1:1 pad stretch)
 aspect_ratio = "fit"
 
-# Coordinate smoothing factor (0.0 = raw, 0.35 = balanced, 0.8 = heavy smoothing)
-smoothing = 0.35
+# Coordinate smoothing factor (0.0 = raw, 0.5 = balanced, 0.8 = heavy smoothing)
+smoothing = 0.5
+
+# Stationary noise deadzone in sensor units (2.5 units ≈ 0.1mm)
+deadzone = 2.5
 
 # Use One-Euro adaptive filter (recommended)
 use_one_euro = true
@@ -150,8 +155,8 @@ pressure_min = 800
 pressure_max = 4096
 pressure_curve = "velocity"
 
-# Physical clickpad action ("stylus" = trigger BTN_STYLUS for palette/right-click)
-click_action = "stylus"
+# Physical clickpad action ("none" = ignore click, "touch" = max pressure, "stylus" = trigger BTN_STYLUS)
+click_action = "none"
 
 # Desktop notifications
 notifications = true
